@@ -15,185 +15,151 @@
 //      Lisp Value
 // ============================================================================
 
-typedef enum lval_type_t { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR } lval_type_t;
+enum { LVAL_NUM, LVAL_ERR };
+enum { LERR_DIV_ZERO, LERR_BAD_OP, LERR_BAD_NUM };
 
-typedef struct lval_t lval_t;
+typedef struct lval_t {
+        int type;
+        long num;
+        int err;
+} lval_t;
 
-struct lval_t {
-        lval_type_t     type;
-        char*           err;
-        long            num;
-        char*           sym;
-        int             cell_count;
-        lval_t**        cell;
-};
-
-lval_t*
-lval_create_err(char* err)
+lval_t 
+lval_num(long num)
 {
-        lval_t* v = malloc(sizeof(lval_t));
-        v->type = LVAL_ERR;
-        v->err = malloc(strlen(err) + 1);
-        strcpy(v->err, err);
+        lval_t v = {0};
+        v.type = LVAL_NUM;
+        v.num = num;
         return v;
 }
 
-lval_t*
-lval_create_num(long num)
+lval_t 
+lval_err(int err)
 {
-        lval_t* v = malloc(sizeof(lval_t));
-        v->type = LVAL_NUM;
-        v->num = num;
+        lval_t v = {0};
+        v.type = LVAL_ERR;
+        v.err = err;
         return v;
 }
 
-lval_t*
-lval_create_sym(char* sym)
+void 
+lval_print(lval_t v)
 {
-
-        lval_t* v = malloc(sizeof(lval_t));
-        v->type = LVAL_SYM;
-        v->sym = malloc(strlen(sym) + 1);
-        strcpy(v->sym, sym);
-        return v;
-}
-
-lval_t*
-lval_create_sexpr(void)
-{
-        lval_t* v = malloc(sizeof(lval_t));
-        v->type = LVAL_SEXPR;
-        v->cell_count = 0;
-        v->cell = NULL;
-        return v;
-}
-
-void
-lval_destroy(lval_t* v)
-{
-        switch (v->type)
+        switch (v.type)
         {
+        case LVAL_NUM: 
+                printf("%ld", v.num); 
+                break;
+
         case LVAL_ERR:
-                free(v->err);
-                break;
-
-        case LVAL_NUM:
-                break;
-
-        case LVAL_SYM:
-                free(v->sym);
-                break;
-
-        case LVAL_SEXPR:
-                if (v->cell_count == 0) break;
-                for (int i = 0; i < (v->cell_count); i += 1) lval_destroy(v->cell[i]);
-                free(v->cell);
+                switch (v.err) 
+                {
+                        case LERR_DIV_ZERO: printf("[ERR]: Division by zero!"); break;
+                        case LERR_BAD_OP: printf("[ERR]: Invalid operation!"); break;
+                        case LERR_BAD_NUM: printf("[ERR]: Invalid number!"); break;
+                }
                 break;
         }
 
-        free(v);
 }
 
 // ============================================================================
 //      Evaluation Functions
 // ============================================================================
 
-// typedef lval_t (*eval_op_fptr_t) (lval_t, lval_t);
+typedef lval_t (*eval_op_fptr_t) (lval_t, lval_t);
 
-// lval_t eval_op_add(lval_t a, lval_t b) { return lval_num(a.num + b.num); }
-// lval_t eval_op_sub(lval_t a, lval_t b) { return lval_num(a.num - b.num); }
-// lval_t eval_op_mul(lval_t a, lval_t b) { return lval_num(a.num * b.num); }
-// lval_t eval_op_div(lval_t a, lval_t b) { return (b.num != 0) ? lval_num(a.num / b.num) : lval_err(LERR_DIV_ZERO); }
-// lval_t eval_op_mod(lval_t a, lval_t b) { return lval_num(a.num % b.num); }
-// lval_t eval_op_pow(lval_t a, lval_t b) { return lval_num(pow(a.num, b.num)); }
-// lval_t eval_op_min(lval_t a, lval_t b) { return (a.num < b.num) ? lval_num(a.num) : lval_num(b.num); }
-// lval_t eval_op_max(lval_t a, lval_t b) { return (a.num > b.num) ? lval_num(a.num) : lval_num(b.num); }
+lval_t eval_op_add(lval_t a, lval_t b) { return lval_num(a.num + b.num); }
+lval_t eval_op_sub(lval_t a, lval_t b) { return lval_num(a.num - b.num); }
+lval_t eval_op_mul(lval_t a, lval_t b) { return lval_num(a.num * b.num); }
+lval_t eval_op_div(lval_t a, lval_t b) { return (b.num != 0) ? lval_num(a.num / b.num) : lval_err(LERR_DIV_ZERO); }
+lval_t eval_op_mod(lval_t a, lval_t b) { return lval_num(a.num % b.num); }
+lval_t eval_op_pow(lval_t a, lval_t b) { return lval_num(pow(a.num, b.num)); }
+lval_t eval_op_min(lval_t a, lval_t b) { return (a.num < b.num) ? lval_num(a.num) : lval_num(b.num); }
+lval_t eval_op_max(lval_t a, lval_t b) { return (a.num > b.num) ? lval_num(a.num) : lval_num(b.num); }
 
-// eval_op_fptr_t
-// eval_op(mpc_ast_t* t)
-// {
-//         // op   : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;
+eval_op_fptr_t
+eval_op(mpc_ast_t* t)
+{
+        // op   : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;
 
-//         if (strcmp(t->contents, "+") == 0) return eval_op_add;
-//         if (strcmp(t->contents, "-") == 0) return eval_op_sub;
-//         if (strcmp(t->contents, "*") == 0) return eval_op_mul;
-//         if (strcmp(t->contents, "/") == 0) return eval_op_div;
-//         if (strcmp(t->contents, "%") == 0) return eval_op_mod;
-//         if (strcmp(t->contents, "^") == 0) return eval_op_pow;
-//         if (strcmp(t->contents, "min") == 0) return eval_op_min;
-//         if (strcmp(t->contents, "max") == 0) return eval_op_max;
+        if (strcmp(t->contents, "+") == 0) return eval_op_add;
+        if (strcmp(t->contents, "-") == 0) return eval_op_sub;
+        if (strcmp(t->contents, "*") == 0) return eval_op_mul;
+        if (strcmp(t->contents, "/") == 0) return eval_op_div;
+        if (strcmp(t->contents, "%") == 0) return eval_op_mod;
+        if (strcmp(t->contents, "^") == 0) return eval_op_pow;
+        if (strcmp(t->contents, "min") == 0) return eval_op_min;
+        if (strcmp(t->contents, "max") == 0) return eval_op_max;
 
-//         return NULL;
-// }
+        return NULL;
+}
 
-// lval_t 
-// eval_expr(mpc_ast_t *t)
-// {
-//         // expr : <num> | '(' <op> <expr>+ ')' ;
-//         if (strstr(t->tag, "num"))
-//         {
-//                 return lval_num(atoi(t->contents));
-//         }
+lval_t 
+eval_expr(mpc_ast_t *t)
+{
+        // expr : <num> | '(' <op> <expr>+ ')' ;
+        if (strstr(t->tag, "num"))
+        {
+                return lval_num(atoi(t->contents));
+        }
 
-//         eval_op_fptr_t op = eval_op(t->children[1]);
+        eval_op_fptr_t op = eval_op(t->children[1]);
 
-//         lval_t r = eval_expr(t->children[2]);
-//         if (r.type == LVAL_ERR) return r;
+        lval_t r = eval_expr(t->children[2]);
+        if (r.type == LVAL_ERR) return r;
 
-//         for (int i = 3; i < (t->children_num - 1); i += 1)
-//         {
-//                 lval_t s = eval_expr(t->children[i]);
-//                 if (s.type == LVAL_ERR) return s;
-//                 r = op(r, s);
-//         }
+        for (int i = 3; i < (t->children_num - 1); i += 1)
+        {
+                lval_t s = eval_expr(t->children[i]);
+                if (s.type == LVAL_ERR) return s;
+                r = op(r, s);
+        }
 
-//         return r;
-// }
+        return r;
+}
 
-// lval_t
-// eval_lisp(mpc_ast_t *t)
-// {
-//         // lisp : /^/ <op> <expr>+ /$/ ;
-//         eval_op_fptr_t op = eval_op(t->children[1]);
+lval_t
+eval_lisp(mpc_ast_t *t)
+{
+        // lisp : /^/ <op> <expr>+ /$/ ;
+        eval_op_fptr_t op = eval_op(t->children[1]);
 
-//         lval_t r = eval_expr(t->children[2]);
-//         if (r.type == LVAL_ERR) return r;
+        lval_t r = eval_expr(t->children[2]);
+        if (r.type == LVAL_ERR) return r;
 
-//         for (int i = 3; i < (t->children_num - 1); i += 1)
-//         {
-//                 lval_t s = eval_expr(t->children[i]);
-//                 if (s.type == LVAL_ERR) return s;
-//                 r = op(r, s);
-//         }
+        for (int i = 3; i < (t->children_num - 1); i += 1)
+        {
+                lval_t s = eval_expr(t->children[i]);
+                if (s.type == LVAL_ERR) return s;
+                r = op(r, s);
+        }
 
-//         return r;
-// }
+        return r;
+}
 
 // ============================================================================
-//      Main Function
+//      Main Function1
 // ============================================================================
 
 int 
 main(void)
 {
-        // Set up the parser.
-        mpc_parser_t* num_parser = mpc_new("num");
-        mpc_parser_t* sym_parser = mpc_new("sym");
-        mpc_parser_t* sexpr_parser = mpc_new("sexpr");
-        mpc_parser_t* expr_parser = mpc_new("expr");
-        mpc_parser_t* lisp_parser = mpc_new("lisp");
+        // Polish notation stuff.
+        mpc_parser_t *num_parser = mpc_new("num");
+        mpc_parser_t *op_parser = mpc_new("op");
+        mpc_parser_t *expr_parser = mpc_new("expr");
+        mpc_parser_t *lisp_parser = mpc_new("lisp");
 
         mpca_lang(MPCA_LANG_DEFAULT,
 "\
-num   : /-?[0-9]+/ ;\
-op    : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;\
-sexpr : '(' <expr>* ')' ;\
-expr  : <num> | <sym> | <sexpr> ;\
-lisp  : /^/ <op> <expr>+ /$/ ;\
+num  : /-?[0-9]+/ ;\
+op   : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;\
+expr : <num> | '(' <op> <expr>+ ')' ;\
+lisp : /^/ <op> <expr>+ /$/ ;\
 ",
                 num_parser,
-                sym_parser,
-                sexpr_parser,
+                op_parser,
                 expr_parser,
                 lisp_parser
         );
@@ -206,7 +172,7 @@ lisp  : /^/ <op> <expr>+ /$/ ;\
         while (true)
         {
                 // READ
-                char* input_buffer = readline("<- ");
+                char *input_buffer = readline("<- ");
                 if (!input_buffer) break;
                 add_history(input_buffer);
 
@@ -235,6 +201,6 @@ lisp  : /^/ <op> <expr>+ /$/ ;\
         }
 
         // Clean up, clean up, everybody clean up!
-        mpc_cleanup(5, num_parser, sym_parser, sexpr_parser, expr_parser, lisp_parser);
+        mpc_cleanup(4, num_parser, op_parser, expr_parser, lisp_parser);
         return EXIT_SUCCESS;
 }
