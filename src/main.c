@@ -12,10 +12,10 @@
 #include "mpc.h"
 
 // ============================================================================
-//      Lisp Value
+//      Lisp Value Creation + Destruction
 // ============================================================================
 
-typedef enum lval_type_t { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR } lval_type_t;
+typedef enum lval_type_t { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR, LVAL_LISP } lval_type_t;
 
 typedef struct lval_t lval_t;
 
@@ -68,6 +68,16 @@ lval_create_sexpr(void)
         return v;
 }
 
+lval_t*
+lval_create_lisp(void)
+{
+        lval_t* v = malloc(sizeof(lval_t));
+        v->type = LVAL_LISP;
+        v->cell_count = 0;
+        v->cell = NULL;
+        return v;
+}
+
 void
 lval_destroy(lval_t* v)
 {
@@ -89,9 +99,78 @@ lval_destroy(lval_t* v)
                 for (int i = 0; i < (v->cell_count); i += 1) lval_destroy(v->cell[i]);
                 free(v->cell);
                 break;
+
+        case LVAL_LISP:
+                if (v->cell_count == 0) break;
+                for (int i = 0; i < (v->cell_count); i += 1) lval_destroy(v->cell[i]);
+                free(v->cell);
+                break;
+        
+        default:
+                break;
         }
 
         free(v);
+}
+
+// ============================================================================
+//      Lisp Value Creation from AST
+// ============================================================================
+
+void
+lval_add_cell(lval_t* v, lval_t* new_cell)
+{
+        v->cell_count += 1;
+        v->cell = realloc(v->cell, sizeof(lval_t*) * v->cell_count);
+        v->cell[v->cell_count - 1] = new_cell;
+}
+
+lval_t*
+lval_build_expr_from_ast(mpc_ast_t* t)
+{
+        // expr  : <num> | <sym> | <sexpr> ;
+        if (strstr(t->tag, "num")) return lval_build_num_from_ast(t);
+        if (strstr(t->tag, "sym")) return lval_build_sym_from_ast(t);
+        if (strstr(t->tag, "sexpr")) return lval_build_sexpr_from_ast(t);
+
+        return NULL;
+}
+
+lval_t*
+lval_build_lisp_from_ast(mpc_ast_t* t)
+{
+        // lisp  : /^/ <expr>* /$/ ;
+        lval_t* v = lval_create_lisp();
+
+        // If the lisp contains 0 expression, we're done.
+        if (t->children_num <= 2) return v;
+
+        for (int i = 1; i < (t->children_num - 1); i += 1)
+        {
+                lval_t* new_cell = lval_build_expr_from_ast(t->children[i]);
+                if (!new_cell) return NULL;
+                lval_add_cell(v, new_cell);
+        }
+
+        return NULL;
+}
+
+// ============================================================================
+//      Lisp Value Print
+// ============================================================================
+
+void 
+lval_print(lval_t* v)
+{
+        switch (v->type)
+        {
+        case LVAL_LISP:
+                if (v->cell_count == 0) printf("empty lisp");
+                break;
+        
+        default:
+                break;
+        }
 }
 
 // ============================================================================
@@ -186,10 +265,10 @@ main(void)
         mpca_lang(MPCA_LANG_DEFAULT,
 "\
 num   : /-?[0-9]+/ ;\
-op    : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;\
+sym   : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;\
 sexpr : '(' <expr>* ')' ;\
 expr  : <num> | <sym> | <sexpr> ;\
-lisp  : /^/ <op> <expr>+ /$/ ;\
+lisp  : /^/ <expr>* /$/ ;\
 ",
                 num_parser,
                 sym_parser,
@@ -217,19 +296,29 @@ lisp  : /^/ <op> <expr>+ /$/ ;\
                         printf("-> ");
                         mpc_err_print(r.error);
                         printf("\n");
+
                         mpc_err_delete(r.error);
+                        free(input_buffer);
                         continue;
                 }
 
-                lval_t v = eval_lisp(r.output);
+                lval_t* v = lval_build_lisp_from_ast(r.output);
+                if (v == NULL) 
+                {
+                        printf("-> [ERR] Failed to create lval.\n\n"); 
+                        mpc_ast_print(r.output);
+
+                        mpc_ast_delete(r.output);
+                        free(input_buffer);
+                        continue;
+                }
 
                 // PRINT
                 printf("-> ");
                 lval_print(v);
                 printf("\n\n");
-                // mpc_ast_print(r.output);
+                mpc_ast_print(r.output);
 
-                // LOOP
                 mpc_ast_delete(r.output);
                 free(input_buffer);
         }
