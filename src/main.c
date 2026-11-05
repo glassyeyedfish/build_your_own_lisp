@@ -11,11 +11,14 @@
 
 #include "mpc.h"
 
+#define panic() fprintf(stderr, "[PANIC] in %s @ %u\n", __FILE__, __LINE__); exit(EXIT_FAILURE);
+
 // ============================================================================
 //      Lisp Value Creation + Destruction
 // ============================================================================
 
 typedef enum lval_type_t { LVAL_ERR, LVAL_NUM, LVAL_SYM, LVAL_SEXPR, LVAL_LISP } lval_type_t;
+typedef enum lval_sym_t { LSYM_ADD, LSYM_SUB, LSYM_MUL, LSYM_DIV } lval_sym_t;
 
 typedef struct lval_t lval_t;
 
@@ -23,7 +26,7 @@ struct lval_t {
         lval_type_t     type;
         char*           err;
         long            num;
-        char*           sym;
+        lval_sym_t      sym;
         int             cell_count;
         lval_t**        cell;
 };
@@ -48,13 +51,12 @@ lval_create_num(long num)
 }
 
 lval_t*
-lval_create_sym(char* sym)
+lval_create_sym(lval_sym_t sym)
 {
 
         lval_t* v = malloc(sizeof(lval_t));
         v->type = LVAL_SYM;
-        v->sym = malloc(strlen(sym) + 1);
-        strcpy(v->sym, sym);
+        v->sym = sym;
         return v;
 }
 
@@ -91,7 +93,6 @@ lval_destroy(lval_t* v)
                 break;
 
         case LVAL_SYM:
-                free(v->sym);
                 break;
 
         case LVAL_SEXPR:
@@ -105,9 +106,6 @@ lval_destroy(lval_t* v)
                 for (int i = 0; i < (v->cell_count); i += 1) lval_destroy(v->cell[i]);
                 free(v->cell);
                 break;
-        
-        default:
-                break;
         }
 
         free(v);
@@ -117,12 +115,54 @@ lval_destroy(lval_t* v)
 //      Lisp Value Creation from AST
 // ============================================================================
 
+lval_t* lval_build_expr_from_ast(mpc_ast_t* t);
+
 void
 lval_add_cell(lval_t* v, lval_t* new_cell)
 {
         v->cell_count += 1;
         v->cell = realloc(v->cell, sizeof(lval_t*) * v->cell_count);
         v->cell[v->cell_count - 1] = new_cell;
+}
+
+lval_t*
+lval_build_num_from_ast(mpc_ast_t* t)
+{
+        // num   : /-?[0-9]+/ ;
+        lval_t* v = lval_create_num(atol(t->contents));
+        return v;
+}
+
+lval_t*
+lval_build_sym_from_ast(mpc_ast_t* t)
+{
+        // sym   : '+' | '-' | '*' | '/' ;
+        if (strcmp(t->contents, "+") == 0) return lval_create_sym(LSYM_ADD);
+        if (strcmp(t->contents, "-") == 0) return lval_create_sym(LSYM_SUB);
+        if (strcmp(t->contents, "*") == 0) return lval_create_sym(LSYM_MUL);
+        if (strcmp(t->contents, "/") == 0) return lval_create_sym(LSYM_DIV);
+
+        panic();
+        return NULL;
+}
+
+lval_t*
+lval_build_sexpr_from_ast(mpc_ast_t* t)
+{
+        // sexpr : '(' <expr>* ')' ;
+        lval_t* v = lval_create_sexpr();
+
+        // If the sexpr contains 0 expression, we're done.
+        if (t->children_num <= 2) return v;
+
+        for (int i = 1; i < (t->children_num - 1); i += 1)
+        {
+                lval_t* new_cell = lval_build_expr_from_ast(t->children[i]);
+                if (new_cell == NULL) panic();
+                lval_add_cell(v, new_cell);
+        }
+
+        return v;
 }
 
 lval_t*
@@ -148,28 +188,95 @@ lval_build_lisp_from_ast(mpc_ast_t* t)
         for (int i = 1; i < (t->children_num - 1); i += 1)
         {
                 lval_t* new_cell = lval_build_expr_from_ast(t->children[i]);
-                if (!new_cell) return NULL;
+                if (new_cell == NULL) panic();
                 lval_add_cell(v, new_cell);
         }
 
-        return NULL;
+        return v;
 }
 
 // ============================================================================
 //      Lisp Value Print
 // ============================================================================
 
-void 
-lval_print(lval_t* v)
+void lval_print_expr(lval_t* v);
+
+void
+lval_print_num(lval_t* v)
+{
+        printf("%ld", v->num);
+}
+
+void
+lval_print_sym(lval_t* v)
+{
+        switch(v->sym)
+        {
+        case LSYM_ADD:
+                printf("+");
+                break;
+
+        case LSYM_SUB:
+                printf("-");
+                break;
+
+        case LSYM_MUL:
+                printf("*");
+                break;
+
+        case LSYM_DIV:
+                printf("/");
+                break;
+
+        }
+}
+
+void
+lval_print_sexpr(lval_t* v)
+{
+        printf("(");
+        for (int i = 0; i < v->cell_count; i += 1) 
+        {
+                if (i != 0) printf(" ");
+                lval_print_expr(v->cell[i]);
+        }
+        printf(")");
+}
+
+void
+lval_print_expr(lval_t* v)
 {
         switch (v->type)
         {
+        case LVAL_ERR:
+                panic();
+                break;
+
+        case LVAL_NUM: 
+                lval_print_num(v); 
+                break;
+
+        case LVAL_SYM: 
+                lval_print_sym(v); 
+                break;
+
+        case LVAL_SEXPR: 
+                lval_print_sexpr(v); 
+                break;
+
         case LVAL_LISP:
-                if (v->cell_count == 0) printf("empty lisp");
+                panic();
                 break;
-        
-        default:
-                break;
+        }
+}
+
+void 
+lval_print_lisp(lval_t* v)
+{
+        for (int i = 0; i < v->cell_count; i += 1) 
+        {
+                if (i != 0) printf(" ");
+                lval_print_expr(v->cell[i]);
         }
 }
 
@@ -265,7 +372,7 @@ main(void)
         mpca_lang(MPCA_LANG_DEFAULT,
 "\
 num   : /-?[0-9]+/ ;\
-sym   : '+' | '-' | '*' | '/' | '%' | '^' | \"min\" | \"max\" ;\
+sym   : '+' | '-' | '*' | '/' ;\
 sexpr : '(' <expr>* ')' ;\
 expr  : <num> | <sym> | <sexpr> ;\
 lisp  : /^/ <expr>* /$/ ;\
@@ -303,19 +410,10 @@ lisp  : /^/ <expr>* /$/ ;\
                 }
 
                 lval_t* v = lval_build_lisp_from_ast(r.output);
-                if (v == NULL) 
-                {
-                        printf("-> [ERR] Failed to create lval.\n\n"); 
-                        mpc_ast_print(r.output);
-
-                        mpc_ast_delete(r.output);
-                        free(input_buffer);
-                        continue;
-                }
 
                 // PRINT
                 printf("-> ");
-                lval_print(v);
+                lval_print_lisp(v);
                 printf("\n\n");
                 mpc_ast_print(r.output);
 
