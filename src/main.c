@@ -308,36 +308,139 @@ lval_print(lval_t* v)
 lval_t* lval_eval_sexpr(lval_t* v);
 
 lval_t*
-lval_eval_sym(lval_t* v)
+lval_eval_add(lval_t* v)
 {
-        if (v->cell_count < 2) panic();
+        if (v->cell[1]->type != LVAL_NUM)
+        {
+                lval_destroy(v);
+                return lval_create_err("Can only add numbers!");
+        }
         long r = v->cell[1]->num;
 
         for (int i = 2; i < v->cell_count; i++)
         {
-                switch (v->cell[0]->sym)
+                if (v->cell[i]->type != LVAL_NUM)
                 {
-                case LSYM_ADD: 
-                        r += v->cell[i]->num;
-                        break;
-
-                case LSYM_SUB: 
-                        r -= v->cell[i]->num;
-                        break;
-
-                case LSYM_MUL: 
-                        r *= v->cell[i]->num;
-                        break;
-
-                case LSYM_DIV: 
-                        if (v->cell[i]->num == 0) { lval_destroy(v); return lval_create_err("Division by zero!"); }
-                        r /= v->cell[i]->num;
-                        break;
+                        lval_destroy(v);
+                        return lval_create_err("Can only add numbers!");
                 }
+                r += v->cell[i]->num;
         }
 
         lval_destroy(v);
         return lval_create_num(r);
+}
+
+lval_t*
+lval_eval_sub(lval_t* v)
+{
+        if (v->cell[1]->type != LVAL_NUM)
+        {
+                lval_destroy(v);
+                return lval_create_err("Can only subtract numbers!");
+        }
+        long r = v->cell[1]->num;
+
+        if (v->cell_count == 2)
+        {
+                lval_destroy(v);
+                return lval_create_num(0 - r);
+        }
+
+
+        for (int i = 2; i < v->cell_count; i++)
+        {
+                if (v->cell[i]->type != LVAL_NUM)
+                {
+                        lval_destroy(v);
+                        return lval_create_err("Can only subtract numbers!");
+                }
+                r -= v->cell[i]->num;
+        }
+
+        lval_destroy(v);
+        return lval_create_num(r);
+}
+
+lval_t*
+lval_eval_mul(lval_t* v)
+{
+        if (v->cell[1]->type != LVAL_NUM)
+        {
+                lval_destroy(v);
+                return lval_create_err("Can only multiply numbers!");
+        }
+        long r = v->cell[1]->num;
+
+        for (int i = 2; i < v->cell_count; i++)
+        {
+                if (v->cell[i]->type != LVAL_NUM)
+                {
+                        lval_destroy(v);
+                        return lval_create_err("Can only multiply numbers!");
+                }
+                r *= v->cell[i]->num;
+        }
+
+        lval_destroy(v);
+        return lval_create_num(r);
+}
+
+lval_t*
+lval_eval_div(lval_t* v)
+{
+        if (v->cell[1]->type != LVAL_NUM)
+        {
+                lval_destroy(v);
+                return lval_create_err("Can only divide numbers!");
+        }
+        long r = v->cell[1]->num;
+
+        for (int i = 2; i < v->cell_count; i++)
+        {
+                if (v->cell[i]->type != LVAL_NUM)
+                {
+                        lval_destroy(v);
+                        return lval_create_err("Can only divide numbers!");
+                }
+                if (v->cell[i]->num == 0) {
+                        lval_destroy(v);
+                        return lval_create_err("Division by zero!");
+                }
+                r /= v->cell[i]->num;
+        }
+
+        lval_destroy(v);
+        return lval_create_num(r);
+}
+
+lval_t*
+lval_eval_sym(lval_t* v)
+{
+        if (v->cell_count < 2) panic();
+        lval_t* r;
+
+        switch(v->cell[0]->sym)
+        {
+        case LSYM_ADD:
+                r = lval_eval_add(v);
+                break;
+
+        case LSYM_SUB:
+                r = lval_eval_sub(v);
+                break;
+
+        case LSYM_MUL:
+                r = lval_eval_mul(v);
+                break;
+
+        case LSYM_DIV:
+                r = lval_eval_div(v);
+                break;
+
+        }
+
+        return r;
 }
 
 lval_t*
