@@ -6,6 +6,7 @@ add_compile_options(-std=c99 -Wall -Wpedantic -Wextra -Werror -g)
 add_executable(
         ${PROJECT_NAME}
         main.c
+        my_readline.c
         mpc.c
 )
 

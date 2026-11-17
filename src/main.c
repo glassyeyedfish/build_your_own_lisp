@@ -6,8 +6,7 @@
 #include <math.h>
 #include <string.h>
 
-#include<readline/readline.h>
-#include<readline/history.h>
+#include "my_readline.h"
 
 #include "mpc.h"
 
@@ -130,19 +129,41 @@ lval_destroy(lval_t* v)
 
 
 
-// ============================================================================
-//      Lisp Value Creation from AST
-// ============================================================================
 
-lval_t* lval_build_expr_from_ast(mpc_ast_t* t);
+// ============================================================================
+//      Lisp Value Modification Functions
+// ============================================================================
 
 void
-lval_add_cell(lval_t* v, lval_t* new_cell)
+lval_add_cell_to_end(lval_t* v, lval_t* new_cell)
 {
         v->cell_count += 1;
         v->cell = realloc(v->cell, sizeof(lval_t*) * v->cell_count);
         v->cell[v->cell_count - 1] = new_cell;
 }
+
+void 
+lval_remove_cell_from_front(lval_t* v)
+{
+        v->cell_count -= 1;
+        for (int i = 0; i < v->cell_count; i += 1)
+        {
+                v->cell[i] = v->cell[i+1];
+        }
+        v->cell = realloc(v->cell, sizeof(lval_t*) * v->cell_count);
+}
+
+
+
+
+
+
+
+// ============================================================================
+//      Lisp Value Creation from AST
+// ============================================================================
+
+lval_t* lval_build_expr_from_ast(mpc_ast_t* t);
 
 lval_t*
 lval_build_num_from_ast(mpc_ast_t* t)
@@ -169,7 +190,7 @@ lval_internal_build_sexpr_or_qexpr(mpc_ast_t* t, lval_t* v)
         {
                 lval_t* new_cell = lval_build_expr_from_ast(t->children[i]);
                 if (new_cell == NULL) panic();
-                lval_add_cell(v, new_cell);
+                lval_add_cell_to_end(v, new_cell);
         }
 
         return v;
@@ -421,6 +442,20 @@ lval_eval_div(lval_t* v)
 }
 
 lval_t*
+lval_eval_list(lval_t* v)
+{
+        if (v->cell_count < 2)
+        {
+                lval_destroy(v);
+                return lval_create_err("List must have at least one argument!");
+        }
+
+        lval_remove_cell_from_front(v);
+        v->type = LVAL_QEXPR;
+        return v;
+}
+
+lval_t*
 lval_eval_sym(lval_t* v)
 {
         if (v->cell_count < 2) panic();
@@ -430,6 +465,7 @@ lval_eval_sym(lval_t* v)
         else if (strcmp(v->cell[0]->chars, "-") == 0) r = lval_eval_sub(v);
         else if (strcmp(v->cell[0]->chars, "*") == 0) r = lval_eval_mul(v);
         else if (strcmp(v->cell[0]->chars, "/") == 0) r = lval_eval_div(v);
+        else if (strcmp(v->cell[0]->chars, "list") == 0) r = lval_eval_list(v);
 
         if (r == NULL) panic();
 
@@ -513,6 +549,9 @@ lval_eval_expr(lval_t* v)
 int 
 main(void)
 {
+        // Set up readline.
+        readline_t* my_rl = my_rl_create("<- ", 80);
+
         // Set up the parser.
         mpc_parser_t* num_parser = mpc_new("num");
         mpc_parser_t* sym_parser = mpc_new("sym");
@@ -523,7 +562,7 @@ main(void)
         mpca_lang(MPCA_LANG_DEFAULT,
 "\
 num   : /-?[0-9]+/ ;\
-sym   : '+' | '-' | '*' | '/' ;\
+sym   : '+' | '-' | '*' | '/' | \"list\" ;\
 sexpr : '(' <expr>* ')' ;\
 qexpr : '{' <expr>* '}' ;\
 expr  : <num> | <sym> | <sexpr> | <qexpr> ;\
@@ -544,9 +583,8 @@ expr  : <num> | <sym> | <sexpr> | <qexpr> ;\
         while (true)
         {
                 // READ
-                char* input_buffer = readline("<- ");
+                char* input_buffer = my_rl_readline(my_rl);
                 if (!input_buffer) break;
-                add_history(input_buffer);
 
                 // EVALUATE
                 mpc_result_t r;
@@ -584,5 +622,7 @@ expr  : <num> | <sym> | <sexpr> | <qexpr> ;\
                 qexpr_parser,
                 expr_parser 
         );
+        my_rl_destroy(my_rl);
+
         return EXIT_SUCCESS;
 }
